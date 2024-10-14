@@ -1,0 +1,74 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Clone Repo
+        uses: actions/checkout@v2
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v2
+        with:
+          version: "5.5.1" # replace with your Qt version
+          arch: "win32_mingw492" # replace with your architecture
+
+      - name: Download npcap
+        run: |
+          Invoke-WebRequest -Uri https://nmap.org/npcap/dist/npcap-sdk-1.13.zip -OutFile npcap-sdk-1.13.zip
+          Expand-Archive -Path ./npcap-sdk-1.13.zip -DestinationPath "C:/"
+
+      - name: Build BandwidthMonitorService
+        run: |
+          cd BandwidthMonitorService
+          qmake BandwidthMonitorService.pro -r -spec win32-g++
+          make in build-BandwidthMonitorService-Desktop_Qt_5_5_1_MinGW_32bit-Release
+
+      - name: Build ServieInstaller
+        run: |
+          cd ServiceInstaller
+          qmake ServiceInstaller.pro -r -spec win32-g++
+          make in build-ServiceInstaller-Desktop_Qt_5_5_1_MinGW_32bit-Release
+
+      - name: Copy binaries
+        run: |
+          md C:/release
+          cp ServiceInstaller\\build-ServiceInstaller-Desktop_Qt_5_5_1_MinGW_32bit-Release\\release\\ServiceInstaller.exe C:\\release
+          cp BandwidthMonitorService\\build-BandwidthMonitorService-Desktop_Qt_5_5_1_MinGW_32bit-Release\\release\\BandwidthMonitorService.exe C:\\release
+
+      - name: Prepare dependencies
+        run: |
+          cd c:\\release
+          ./Qt/5.5/mingw492_32/bin/windeployqt BandwidthMonitorService.exe
+          ./Qt/5.5/mingw492_32/bin/windeployqt ServiceInstaller.exe
+
+      - name: Zip Files
+        run: |
+          Compress-Archive -Path c:/release/* -DestinationPath bandwidth_monitor_service.zip
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bandwidth_monitor_service.zip
+          asset_name: bandwidth_monitor_service.zip
+          asset_content_type: application/zip
